@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from copy import deepcopy
 from uuid import uuid4
-import textwrap
 
 import streamlit as st
 
@@ -18,38 +17,77 @@ st.set_page_config(page_title=PAGE_TITLE, page_icon="🧰", layout="wide")
 CSS = """
 <style>
 :root {
-  --accent: #0F766E; /* teal-700 */
-  --light: #f8fafc;
+  --accent: #0E7490;
+  --accent-soft: #f0f9ff;
   --ink: #0f172a;
 }
 html, body, [class*="css"]  {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji" !important;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif !important;
   color: var(--ink);
+  background: #f8fafc;
 }
-.block-container { padding-top: 2rem; padding-bottom: 2rem; }
+.block-container {
+  padding-top: 2.5rem;
+  padding-bottom: 2.5rem;
+  max-width: 1100px;
+}
 .cv-card {
-  background: white; border: 1px solid #e5e7eb; border-radius: 18px; padding: 24px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  background: white;
+  border-radius: 24px;
+  padding: 28px 32px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 116, 144, 0.08);
 }
 .badge {
-  display:inline-block; padding: 2px 10px; border-radius:999px; border:1px solid #e5e7eb; margin: 0 6px 6px 0; font-size: 12px;
+  display:inline-flex;
+  padding: 4px 12px;
+  border-radius:999px;
+  background: rgba(14, 116, 144, 0.1);
+  color: #0f172a;
+  font-weight: 500;
+  font-size: 12px;
+  margin: 0 6px 6px 0;
 }
-.h1 { font-size: 32px; font-weight: 800; margin-bottom: 2px; }
-.h2 { font-size: 15px; color:#334155; font-weight: 600; text-transform: uppercase; letter-spacing: .12em; margin: 18px 0 8px 0;}
-.h3 { font-size: 15px; font-weight:700; margin: 4px 0 2px 0; }
+.h1 { font-size: 34px; font-weight: 800; margin-bottom: 4px; }
+.h2 { font-size: 15px; color:#0f172a; font-weight: 700; text-transform: uppercase; letter-spacing: .18em; margin: 18px 0 12px 0;}
+.h3 { font-size: 16px; font-weight:700; margin: 2px 0 2px 0; color:#0f172a; }
 .muted { color:#475569; }
-.rule { height:1px; background:linear-gradient(90deg,var(--accent),transparent); margin: 14px 0 10px 0;}
+.rule { height:1px; background:linear-gradient(90deg,var(--accent),transparent); margin: 18px 0 14px 0;}
 .header-band {
-  background: linear-gradient(90deg, var(--accent), #0284c7);
-  color: white; border-radius: 18px; padding: 18px; margin-bottom: 16px;
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.92), rgba(56, 189, 248, 0.88));
+  color: white;
+  border-radius: 28px;
+  padding: 26px 32px;
+  margin-bottom: 22px;
+  position: relative;
+  overflow: hidden;
 }
-.header-band .title { font-size: 28px; font-weight: 800; margin:0; }
-.header-band .subtitle { opacity:.95; margin-top:6px; }
-.flex { display:flex; gap: 16px; flex-wrap:wrap; }
-.col { flex:1; min-width:220px; }
-.small { font-size: 12px; }
-.footer { border-top:1px dashed #e2e8f0; margin-top:14px; padding-top:10px; font-size:12px; color:#64748b;}
+.header-band::after {
+  content:"";
+  position:absolute;
+  inset:20px;
+  border:1px solid rgba(255,255,255,0.25);
+  border-radius:20px;
+  opacity:0.6;
+}
+.header-band .title { font-size: 30px; font-weight: 800; margin:0; }
+.header-band .subtitle { opacity:.9; margin-top:10px; font-size: 16px; }
+.grid-preview {
+  display:grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
+  gap: 36px;
+}
+.side-card {
+  background: var(--accent-soft);
+  border-radius: 20px;
+  padding: 22px 24px;
+  border: 1px solid rgba(14, 116, 144, 0.18);
+}
+.small { font-size: 13px; }
+.footer { border-top:1px dashed #e2e8f0; margin-top:18px; padding-top:12px; font-size:12px; color:#64748b;}
 .sign-line { margin-top: 18px; }
+ul.clean-list { padding-left: 0; }
+ul.clean-list li { list-style: none; margin-bottom: 12px; }
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -335,158 +373,223 @@ from reportlab.lib.units import cm
 from reportlab.lib.colors import HexColor
 
 
-def wrap_lines(text: str, width: int = 92) -> List[str]:
-    lines = textwrap.wrap(text, width=width)
-    return lines or [text]
-
-
-def ensure_space(y: float, margin: float, needed: float) -> bool:
-    return (y - needed) > (margin + 36)
-
-
 def cv_to_pdf_bytes(cv: CVData, show_sections: Dict[str, bool], signature_image: Optional[bytes], theme_color: str) -> bytes:
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
-    margin = 1.8 * cm
-    x = margin
-    y = height - margin
+    margin = 1.9 * cm
+    inner_width = width - 2 * margin
+    side_width = 6.2 * cm
+    gutter = 0.8 * cm
+    main_width = inner_width - side_width - gutter
 
     c.setTitle(f"CV - {cv.name}")
-    accent = HexColor(theme_color) if theme_color else HexColor("#0F766E")
+    accent = HexColor(theme_color) if theme_color else HexColor("#0E7490")
+    neutral = HexColor("#0f172a")
+    muted = HexColor("#475569")
 
-    def write_text(txt: str, size: int = 11, bold: bool = False, color: str = "#0f172a", leading: float = 14.0) -> None:
-        nonlocal x, y
-        c.setFillColor(HexColor(color))
-        c.setFont("Helvetica-Bold" if bold else "Helvetica", size)
-        for line in txt.split("\n"):
+    def wrap_by_width(text: str, font_name: str, font_size: float, max_width: float) -> List[str]:
+        lines: List[str] = []
+        for paragraph in text.splitlines() or [text]:
+            words = paragraph.split()
+            if not words:
+                lines.append("")
+                continue
+            current = words[0]
+            for word in words[1:]:
+                test = f"{current} {word}"
+                if c.stringWidth(test, font_name, font_size) <= max_width:
+                    current = test
+                else:
+                    lines.append(current)
+                    current = word
+            lines.append(current)
+        return lines or [""]
+
+    def draw_lines(lines: List[str], *, x: float, y: float, font_name: str, font_size: float, leading: float, color: HexColor) -> float:
+        c.setFont(font_name, font_size)
+        c.setFillColor(color)
+        for line in lines:
             c.drawString(x, y, line)
             y -= leading
+        return y
 
-    def section(title: str) -> None:
-        nonlocal y
-        y -= 6
+    def draw_section_label(label: str, *, x: float, y: float) -> float:
+        badge_height = 16
+        badge_width = c.stringWidth(label.upper(), "Helvetica-Bold", 8) + 14
         c.setFillColor(accent)
-        c.setLineWidth(2)
-        c.line(margin, y, margin + 60, y)
-        y -= 12
-        write_text(title, size=11, bold=True, color="#0f172a")
+        c.roundRect(x, y - badge_height + 4, badge_width, badge_height, 6, fill=1, stroke=0)
+        c.setFillColor(HexColor("#ffffff"))
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(x + 7, y - 4, label.upper())
+        return y - badge_height - 6
 
-    # Header band
+    def ensure_column_space(current_y: float, needed: float) -> bool:
+        return current_y - needed >= margin + 1.2 * cm
+
+    def draw_badges(values: List[str], *, x: float, y: float, max_width: float) -> float:
+        if not values:
+            return y
+        current_x = x
+        current_y = y
+        pad_x = 4
+        pad_y = 2
+        height_badge = 12
+        c.setFont("Helvetica", 7)
+        for value in values:
+            text_width = c.stringWidth(value, "Helvetica", 7) + pad_x * 2
+            if current_x + text_width > x + max_width:
+                current_x = x
+                current_y -= height_badge + 4
+            c.setFillColor(accent)
+            c.roundRect(current_x, current_y - height_badge + pad_y, text_width, height_badge, 5, fill=1, stroke=0)
+            c.setFillColor(HexColor("#ffffff"))
+            c.drawString(current_x + pad_x, current_y - 4, value)
+            current_x += text_width + 6
+        return current_y - height_badge - 6
+
+    header_height = 92
     c.setFillColor(accent)
-    c.roundRect(margin - 6, height - margin - 38, width - 2 * margin + 12, 38, 10, fill=True, stroke=0)
+    c.roundRect(margin, height - margin - header_height, inner_width, header_height, 18, fill=1, stroke=0)
     c.setFillColor(HexColor("#ffffff"))
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(margin, height - margin - 18, cv.name)
-    c.setFont("Helvetica", 10)
-    c.drawString(margin, height - margin - 32, cv.headline[:140])
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(margin + 18, height - margin - 28, cv.name)
+    c.setFont("Helvetica", 11)
+    c.drawString(margin + 18, height - margin - 46, cv.headline[:150])
 
-    y = height - margin - 52
+    contact_lines = wrap_by_width(delist([cv.location, cv.phone, cv.email, cv.linkedin] + cv.websites), "Helvetica", 9, inner_width - 36)
+    contact_y = height - margin - 62
+    contact_y = draw_lines(contact_lines, x=margin + 18, y=contact_y, font_name="Helvetica", font_size=9, leading=11, color=HexColor("#e0f2fe"))
 
-    contacts = delist([cv.location, cv.phone, cv.email, cv.linkedin] + cv.websites)
-    write_text(contacts, size=9, color="#334155", leading=11)
+    body_top = contact_y - 16
+    main_x = margin
+    side_x = margin + main_width + gutter
+    y_main = body_top
+    y_side = body_top
+
+    side_bg_top = body_top + 10
+    c.setFillColor(HexColor("#f0f9ff"))
+    c.roundRect(side_x - 10, margin, side_width + 20, side_bg_top - margin, 16, fill=1, stroke=0)
 
     truncated = False
 
-    if show_sections.get("Résumé", True) and cv.summary:
-        summary_lines = wrap_lines(cv.summary, width=110)
-        required = (len(summary_lines) + 3) * 12
-        if ensure_space(y, margin, required):
-            section("Résumé")
-            for line in summary_lines:
-                write_text(line, size=10, color="#111827", leading=13)
+    if show_sections.get("Résumé", True) and cv.summary and not truncated:
+        lines = wrap_by_width(cv.summary, "Helvetica", 10, main_width)
+        needed = 26 + len(lines) * 13
+        if ensure_column_space(y_main, needed):
+            y_main = draw_section_label("Résumé", x=main_x, y=y_main)
+            y_main = draw_lines(lines, x=main_x, y=y_main, font_name="Helvetica", font_size=10, leading=13, color=neutral)
+            y_main -= 4
         else:
             truncated = True
 
     if show_sections.get("Expériences", True) and cv.experiences and not truncated:
-        section("Expériences")
+        y_main = draw_section_label("Expériences", x=main_x, y=y_main)
+        y_main -= 4
         for exp in cv.experiences:
-            bullet_lines = sum(len(wrap_lines(b, width=96)) for b in exp.bullets)
-            needed = (bullet_lines + 4) * 12
-            if not ensure_space(y, margin, needed):
+            title = f"{exp.role} — {exp.org}".strip(" —")
+            title_lines = wrap_by_width(title, "Helvetica-Bold", 10.5, main_width)
+            date_lines = wrap_by_width(exp.dates, "Helvetica", 9, main_width)
+            bullets_lines = sum(len(wrap_by_width(bullet, "Helvetica", 9.5, main_width - 16)) for bullet in exp.bullets)
+            needed = (len(title_lines) * 12) + (len(date_lines) * 11) + max(bullets_lines, 1) * 12 + 14
+            if exp.tags:
+                needed += 16
+            if not ensure_column_space(y_main, needed):
                 truncated = True
                 break
-            write_text(f"{exp.role} — {exp.org}", size=10.5, bold=True, color="#0f172a")
-            write_text(exp.dates, size=9, color="#475569", leading=11)
+            y_main = draw_lines(title_lines, x=main_x, y=y_main, font_name="Helvetica-Bold", font_size=10.5, leading=12.5, color=neutral)
+            y_main = draw_lines(date_lines, x=main_x, y=y_main, font_name="Helvetica", font_size=9, leading=11, color=muted)
             for bullet in exp.bullets:
-                wrapped = wrap_lines(bullet, width=96)
-                for idx, line in enumerate(wrapped):
-                    prefix = "• " if idx == 0 else "  "
-                    c.setFillColor(HexColor("#111827"))
-                    c.setFont("Helvetica", 9.5)
-                    c.drawString(x + 8, y, prefix + line)
-                    y -= 11
+                bullet_lines = wrap_by_width(bullet, "Helvetica", 9.5, main_width - 16)
+                c.setFont("Helvetica", 9.5)
+                c.setFillColor(neutral)
+                for idx, line in enumerate(bullet_lines):
+                    if idx == 0:
+                        c.drawString(main_x + 4, y_main, "•")
+                        c.drawString(main_x + 14, y_main, line)
+                    else:
+                        c.drawString(main_x + 14, y_main, line)
+                    y_main -= 12
+            y_main -= 2
             if exp.tags:
-                tags_line = ", ".join(exp.tags)
-                write_text(tags_line, size=8.5, color="#0f172a", leading=10)
+                y_main = draw_badges(exp.tags, x=main_x, y=y_main + 6, max_width=main_width)
+            y_main -= 6
 
     if show_sections.get("Éducation", True) and cv.education and not truncated:
-        section("Éducation")
-        for ed in cv.education:
-            needed = 36
-            if ed.details:
-                needed += len(wrap_lines(ed.details, width=100)) * 11
-            if not ensure_space(y, margin, needed):
+        y_main = draw_section_label("Éducation", x=main_x, y=y_main)
+        y_main -= 2
+        for edu in cv.education:
+            title = f"{edu.title} — {edu.school}".strip(" —")
+            title_lines = wrap_by_width(title, "Helvetica-Bold", 10.5, main_width)
+            date_lines = wrap_by_width(edu.dates, "Helvetica", 9, main_width)
+            details_lines: List[str] = []
+            if edu.details:
+                details_lines = wrap_by_width(edu.details, "Helvetica", 9.5, main_width)
+            needed = len(title_lines) * 12 + len(date_lines) * 11 + len(details_lines) * 12 + 18
+            if not ensure_column_space(y_main, needed):
                 truncated = True
                 break
-            write_text(f"{ed.title} — {ed.school}", size=10.5, bold=True)
-            write_text(ed.dates, size=9, color="#475569", leading=11)
-            if ed.details:
-                for line in wrap_lines(ed.details, width=100):
-                    write_text(line, size=9.5, color="#111827", leading=12)
+            y_main = draw_lines(title_lines, x=main_x, y=y_main, font_name="Helvetica-Bold", font_size=10.5, leading=12, color=neutral)
+            y_main = draw_lines(date_lines, x=main_x, y=y_main, font_name="Helvetica", font_size=9, leading=11, color=muted)
+            if details_lines:
+                y_main = draw_lines(details_lines, x=main_x, y=y_main, font_name="Helvetica", font_size=9.5, leading=12, color=neutral)
+            y_main -= 6
 
-    if show_sections.get("Compétences", True) and not truncated:
-        section("Compétences")
+    def render_side_block(title: str, content_lines: List[str], *, font_size: float = 9.5, leading: float = 12) -> None:
+        nonlocal y_side, truncated
+        if truncated or not content_lines:
+            return
+        needed = 28 + len(content_lines) * leading
+        if not ensure_column_space(y_side, needed):
+            truncated = True
+            return
+        y_side = draw_section_label(title, x=side_x, y=y_side)
+        y_side = draw_lines(content_lines, x=side_x, y=y_side, font_name="Helvetica", font_size=font_size, leading=leading, color=neutral)
+        y_side -= 8
+
+    if show_sections.get("Compétences", True):
         blocks = [
             ("Langues", delist(cv.languages)),
             ("Soft skills", delist(cv.softskills)),
             ("Outils", delist(cv.tools)),
         ]
-        for title, content in blocks:
-            needed = 16
-            if not ensure_space(y, margin, needed):
+        content: List[str] = []
+        for label, values in blocks:
+            if values:
+                content.extend(wrap_by_width(f"{label} : {values}", "Helvetica", 9.5, side_width))
+        render_side_block("Compétences", content)
+
+    if show_sections.get("Intérêts", False) and cv.interests:
+        render_side_block("Centres d’intérêt", wrap_by_width(delist(cv.interests), "Helvetica", 9.5, side_width))
+
+    if show_sections.get("Mots-clés", False) and cv.keywords:
+        if not truncated:
+            needed = 30
+            if not ensure_column_space(y_side, needed):
                 truncated = True
-                break
-            write_text(f"{title} : {content}", size=9.5, color="#111827", leading=12)
-
-    if show_sections.get("Intérêts", False) and cv.interests and not truncated:
-        needed = 24
-        if ensure_space(y, margin, needed):
-            section("Centres d’intérêt")
-            write_text(delist(cv.interests), size=9.5, color="#111827", leading=12)
-        else:
-            truncated = True
-
-    if show_sections.get("Mots-clés", False) and cv.keywords and not truncated:
-        needed = 24
-        if ensure_space(y, margin, needed):
-            section("Mots-clés")
-            write_text(delist(cv.keywords), size=9.5, color="#111827", leading=12)
-        else:
-            truncated = True
+            else:
+                y_side = draw_section_label("Mots-clés", x=side_x, y=y_side)
+                y_side = draw_badges(cv.keywords, x=side_x, y=y_side + 10, max_width=side_width)
 
     if truncated:
-        write_text(
-            "Contenu réduit pour maintenir une seule page. Ajuste la sélection des sections ou des expériences.",
-            size=8.5,
-            color="#dc2626",
-            leading=10,
-        )
+        c.setFillColor(HexColor("#dc2626"))
+        c.setFont("Helvetica", 8.5)
+        c.drawString(margin, margin + 0.5 * cm, "Contenu réduit pour conserver une seule page. Ajuste les sections ou retire des expériences.")
 
     if signature_image:
         try:
             img = ImageReader(io.BytesIO(signature_image))
             img_w = 4.6 * cm
             img_h = 1.8 * cm
-            c.drawImage(img, width - margin - img_w, margin + 1.2 * cm, img_w, img_h, mask="auto")
-            c.setFillColor(HexColor("#64748b"))
+            c.drawImage(img, width - margin - img_w, margin + 1.4 * cm, img_w, img_h, mask="auto")
+            c.setFillColor(muted)
             c.setFont("Helvetica", 8)
-            c.drawString(width - margin - img_w, margin + 1.0 * cm, "Signé électroniquement")
+            c.drawString(width - margin - img_w, margin + 1.1 * cm, "Signé électroniquement")
         except Exception:
             pass
 
-    c.setFillColor(HexColor("#64748b"))
+    c.setFillColor(muted)
     c.setFont("Helvetica", 8)
     c.drawString(margin, margin, f"Exporté le {datetime.now().strftime('%d/%m/%Y %H:%M')} – Généré avec Streamlit")
 
@@ -797,60 +900,99 @@ def render_preview(cv: CVData, show_sections: Dict[str, bool]) -> None:
     st.markdown('<div class="rule"></div>', unsafe_allow_html=True)
     st.subheader("👀 Aperçu web")
     with st.container():
-        st.markdown('<div class="cv-card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="h1">{cv.name}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="muted">{cv.headline}</div>', unsafe_allow_html=True)
         contact_line = delist([cv.location, cv.phone, cv.email, cv.linkedin] + cv.websites)
-        st.markdown(f'<div class="small muted">{contact_line}</div>', unsafe_allow_html=True)
-        st.markdown('<div class="rule"></div>', unsafe_allow_html=True)
 
+        main_blocks: List[str] = []
         if show_sections.get("Résumé", True) and cv.summary:
-            st.markdown('<div class="h2">Résumé</div>', unsafe_allow_html=True)
-            st.write(cv.summary)
+            main_blocks.append(
+                f"""
+                <section>
+                    <div class=\"h2\">Résumé</div>
+                    <p class=\"muted\">{cv.summary}</p>
+                </section>
+                """
+            )
 
-        col_main, col_side = st.columns([1.75, 1])
-        with col_main:
-            if show_sections.get("Expériences", True) and cv.experiences:
-                st.markdown('<div class="h2">Expériences</div>', unsafe_allow_html=True)
-                for exp in cv.experiences:
-                    st.markdown(f'<div class="h3">{exp.role} — {exp.org}</div>', unsafe_allow_html=True)
-                    st.caption(exp.dates)
-                    for bullet in exp.bullets:
-                        st.markdown(f"- {bullet}")
-                    if exp.tags:
-                        st.markdown(
-                            "".join([f'<span class="badge">{tag}</span>' for tag in exp.tags]),
-                            unsafe_allow_html=True,
-                        )
-            if show_sections.get("Éducation", True) and cv.education:
-                st.markdown('<div class="h2">Éducation</div>', unsafe_allow_html=True)
-                for edu in cv.education:
-                    st.markdown(f'<div class="h3">{edu.title}</div>', unsafe_allow_html=True)
-                    st.caption(f"{edu.school} – {edu.dates}")
-                    if edu.details:
-                        st.markdown(edu.details)
-
-        with col_side:
-            if show_sections.get("Compétences", True):
-                st.markdown('<div class="h2">Compétences</div>', unsafe_allow_html=True)
-                st.markdown(f"**Langues :** {delist(cv.languages)}")
-                st.markdown(f"**Soft skills :** {delist(cv.softskills)}")
-                st.markdown(f"**Outils :** {delist(cv.tools)}")
-            if show_sections.get("Intérêts", False) and cv.interests:
-                st.markdown('<div class="h2">Centres d’intérêt</div>', unsafe_allow_html=True)
-                st.markdown(delist(cv.interests))
-            if show_sections.get("Mots-clés", False) and cv.keywords:
-                st.markdown('<div class="h2">Mots-clés</div>', unsafe_allow_html=True)
-                st.markdown(
-                    "".join([f'<span class="badge">{keyword}</span>' for keyword in cv.keywords]),
-                    unsafe_allow_html=True,
+        if show_sections.get("Expériences", True) and cv.experiences:
+            exp_html = ["<div class=\"h2\">Expériences</div>"]
+            for exp in cv.experiences:
+                bullets = "".join([f"<li>{bullet}</li>" for bullet in exp.bullets])
+                tags = "".join([f'<span class="badge">{tag}</span>' for tag in exp.tags]) if exp.tags else ""
+                exp_html.append(
+                    f"""
+                    <article>
+                        <div class=\"h3\">{exp.role} — {exp.org}</div>
+                        <div class=\"small muted\">{exp.dates}</div>
+                        <ul class=\"clean-list\">{bullets}</ul>
+                        <div>{tags}</div>
+                    </article>
+                    """
                 )
+            main_blocks.append("".join(exp_html))
 
-        st.markdown(
-            '<div class="footer">Astuce : adapte l’accroche et les tags selon la cible. Les déclinaisons sont gérées dans la barre latérale.</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
+        if show_sections.get("Éducation", True) and cv.education:
+            edu_html = ["<div class=\"h2\">Éducation</div>"]
+            for edu in cv.education:
+                details = f"<p class=\"small muted\">{edu.details}</p>" if edu.details else ""
+                edu_html.append(
+                    f"""
+                    <article>
+                        <div class=\"h3\">{edu.title}</div>
+                        <div class=\"small muted\">{edu.school} — {edu.dates}</div>
+                        {details}
+                    </article>
+                    """
+                )
+            main_blocks.append("".join(edu_html))
+
+        side_blocks: List[str] = []
+        if show_sections.get("Compétences", True):
+            side_blocks.append(
+                f"""
+                <section>
+                    <div class=\"h2\">Compétences</div>
+                    <p><strong>Langues :</strong><br>{delist(cv.languages)}</p>
+                    <p><strong>Soft skills :</strong><br>{delist(cv.softskills)}</p>
+                    <p><strong>Outils :</strong><br>{delist(cv.tools)}</p>
+                </section>
+                """
+            )
+        if show_sections.get("Intérêts", False) and cv.interests:
+            side_blocks.append(
+                f"""
+                <section>
+                    <div class=\"h2\">Centres d’intérêt</div>
+                    <p>{delist(cv.interests)}</p>
+                </section>
+                """
+            )
+        if show_sections.get("Mots-clés", False) and cv.keywords:
+            side_blocks.append(
+                f"""
+                <section>
+                    <div class=\"h2\">Mots-clés</div>
+                    <div>{"".join([f'<span class="badge">{keyword}</span>' for keyword in cv.keywords])}</div>
+                </section>
+                """
+            )
+
+        preview_html = f"""
+        <div class=\"cv-card\">
+            <header>
+                <div class=\"h1\">{cv.name}</div>
+                <div class=\"muted\">{cv.headline}</div>
+                <div class=\"small muted\">{contact_line}</div>
+                <div class=\"rule\"></div>
+            </header>
+            <div class=\"grid-preview\">
+                <div>{"".join(main_blocks) if main_blocks else ""}</div>
+                <aside class=\"side-card\">{"".join(side_blocks) if side_blocks else ""}</aside>
+            </div>
+            <div class=\"footer\">Astuce : adapte l’accroche et les tags selon la cible. Les déclinaisons sont gérées dans la barre latérale.</div>
+        </div>
+        """
+
+        st.markdown(preview_html, unsafe_allow_html=True)
 
 
 def render_export(cv: CVData, show_sections: Dict[str, bool], signature: Optional[bytes], theme_color: str) -> None:
