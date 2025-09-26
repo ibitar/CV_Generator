@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from copy import deepcopy
 from uuid import uuid4
+from html import escape
 
 import streamlit as st
 
@@ -37,6 +38,21 @@ html, body, [class*="css"]  {
   padding: 28px 32px;
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
   border: 1px solid rgba(15, 116, 144, 0.08);
+}
+.preview-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 20px 0 28px 0;
+}
+.cv-page {
+  background: white;
+  border-radius: 24px;
+  padding: 32px 36px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 116, 144, 0.08);
+  width: min(900px, 100%);
+  box-sizing: border-box;
 }
 .badge {
   display:inline-flex;
@@ -77,6 +93,9 @@ html, body, [class*="css"]  {
   grid-template-columns: minmax(0, 1.2fr) minmax(220px, 0.8fr);
   gap: 36px;
 }
+.grid-preview.single-column {
+  grid-template-columns: 1fr;
+}
 .side-card {
   background: var(--accent-soft);
   border-radius: 20px;
@@ -88,6 +107,19 @@ html, body, [class*="css"]  {
 .sign-line { margin-top: 18px; }
 ul.clean-list { padding-left: 0; }
 ul.clean-list li { list-style: none; margin-bottom: 12px; }
+@media (max-width: 960px) {
+  .grid-preview {
+    grid-template-columns: 1fr;
+  }
+  .cv-page {
+    padding: 28px 24px;
+  }
+  .side-card {
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
@@ -426,7 +458,7 @@ def cv_to_pdf_bytes(cv: CVData, show_sections: Dict[str, bool], signature_image:
         return y - badge_height - 6
 
     def ensure_column_space(current_y: float, needed: float) -> bool:
-        return current_y - needed >= margin + 1.2 * cm
+        return current_y - needed >= margin + 0.6 * cm
 
     def draw_badges(values: List[str], *, x: float, y: float, max_width: float) -> float:
         if not values:
@@ -597,6 +629,37 @@ def cv_to_pdf_bytes(cv: CVData, show_sections: Dict[str, bool], signature_image:
     c.save()
     buffer.seek(0)
     return buffer.read()
+
+
+def cv_to_html(cv: CVData, show_sections: Dict[str, bool]) -> bytes:
+    page_html = build_preview_html(cv, show_sections, include_wrapper=True)
+    document = f"""<!DOCTYPE html>
+<html lang=\"fr\">
+<head>
+<meta charset=\"utf-8\">
+<title>CV - {escape(cv.name)}</title>
+{CSS}
+<style>
+body {{
+  background: #f8fafc;
+  margin: 0;
+  padding: 32px 0;
+  font-family: \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;
+}}
+main {{
+  display: flex;
+  justify-content: center;
+  padding: 0 24px;
+}}
+@page {{ size: A4; margin: 12mm; }}
+</style>
+</head>
+<body>
+<main>{page_html}</main>
+</body>
+</html>
+"""
+    return document.encode("utf-8")
 
 
 # ====== UI BUILDERS ======
@@ -896,103 +959,130 @@ def build_cv(preset: Dict[str, Any]) -> CVData:
     )
 
 
+def _html_lines(text: str) -> str:
+    if not text:
+        return ""
+    return "<br>".join(escape(line) for line in text.splitlines())
+
+
+def _html_badges(values: List[str]) -> str:
+    return "".join(f'<span class="badge">{escape(value)}</span>' for value in values if value)
+
+
+def build_preview_html(cv: CVData, show_sections: Dict[str, bool], *, include_wrapper: bool = True) -> str:
+    contact_items = [cv.location, cv.phone, cv.email, cv.linkedin] + cv.websites
+    contact_line = delist([item for item in contact_items if item])
+    contact_html = escape(contact_line) if contact_line else ""
+
+    main_blocks: List[str] = []
+    if show_sections.get("Résumé", True) and cv.summary:
+        main_blocks.append(
+            f"""
+            <section>
+                <div class=\"h2\">Résumé</div>
+                <p class=\"muted\">{_html_lines(cv.summary)}</p>
+            </section>
+            """
+        )
+
+    if show_sections.get("Expériences", True) and cv.experiences:
+        exp_html = ["<div class=\"h2\">Expériences</div>"]
+        for exp in cv.experiences:
+            role_org = " — ".join([part for part in [exp.role, exp.org] if part])
+            bullets = "".join([f"<li>{_html_lines(bullet)}</li>" for bullet in exp.bullets])
+            bullets_html = f"<ul class=\"clean-list\">{bullets}</ul>" if bullets else ""
+            tags = _html_badges(exp.tags)
+            tags_html = f"<div>{tags}</div>" if tags else ""
+            exp_html.append(
+                f"""
+                <article>
+                    <div class=\"h3\">{escape(role_org)}</div>
+                    <div class=\"small muted\">{escape(exp.dates)}</div>
+                    {bullets_html}
+                    {tags_html}
+                </article>
+                """
+            )
+        main_blocks.append("".join(exp_html))
+
+    if show_sections.get("Éducation", True) and cv.education:
+        edu_html = ["<div class=\"h2\">Éducation</div>"]
+        for edu in cv.education:
+            details = f"<p class=\"small muted\">{_html_lines(edu.details)}</p>" if edu.details else ""
+            subtitle = " — ".join([part for part in [edu.school, edu.dates] if part])
+            edu_html.append(
+                f"""
+                <article>
+                    <div class=\"h3\">{escape(edu.title)}</div>
+                    <div class=\"small muted\">{escape(subtitle)}</div>
+                    {details}
+                </article>
+                """
+            )
+        main_blocks.append("".join(edu_html))
+
+    side_blocks: List[str] = []
+    if show_sections.get("Compétences", True):
+        side_blocks.append(
+            f"""
+            <section>
+                <div class=\"h2\">Compétences</div>
+                <p><strong>Langues :</strong><br>{escape(delist(cv.languages))}</p>
+                <p><strong>Soft skills :</strong><br>{escape(delist(cv.softskills))}</p>
+                <p><strong>Outils :</strong><br>{escape(delist(cv.tools))}</p>
+            </section>
+            """
+        )
+    if show_sections.get("Intérêts", False) and cv.interests:
+        side_blocks.append(
+            f"""
+            <section>
+                <div class=\"h2\">Centres d’intérêt</div>
+                <p>{escape(delist(cv.interests))}</p>
+            </section>
+            """
+        )
+    if show_sections.get("Mots-clés", False) and cv.keywords:
+        side_blocks.append(
+            f"""
+            <section>
+                <div class=\"h2\">Mots-clés</div>
+                <div>{_html_badges(cv.keywords)}</div>
+            </section>
+            """
+        )
+
+    side_html = "".join(side_blocks)
+    grid_class = "grid-preview"
+    if not side_html:
+        grid_class += " single-column"
+        grid_inner = f"<div>{''.join(main_blocks)}</div>"
+    else:
+        grid_inner = f"<div>{''.join(main_blocks)}</div><aside class=\"side-card\">{side_html}</aside>"
+
+    page_html = f"""
+    <div class=\"cv-page\">
+        <header>
+            <div class=\"h1\">{escape(cv.name)}</div>
+            <div class=\"muted\">{escape(cv.headline)}</div>
+            <div class=\"small muted\">{contact_html}</div>
+            <div class=\"rule\"></div>
+        </header>
+        <div class=\"{grid_class}\">{grid_inner}</div>
+        <div class=\"footer\">Astuce : adapte l’accroche et les tags selon la cible. Les déclinaisons sont gérées dans la barre latérale.</div>
+    </div>
+    """
+
+    if include_wrapper:
+        return f"<div class=\"preview-wrapper\">{page_html}</div>"
+    return page_html
+
+
 def render_preview(cv: CVData, show_sections: Dict[str, bool]) -> None:
     st.markdown('<div class="rule"></div>', unsafe_allow_html=True)
     st.subheader("👀 Aperçu web")
     with st.container():
-        contact_line = delist([cv.location, cv.phone, cv.email, cv.linkedin] + cv.websites)
-
-        main_blocks: List[str] = []
-        if show_sections.get("Résumé", True) and cv.summary:
-            main_blocks.append(
-                f"""
-                <section>
-                    <div class=\"h2\">Résumé</div>
-                    <p class=\"muted\">{cv.summary}</p>
-                </section>
-                """
-            )
-
-        if show_sections.get("Expériences", True) and cv.experiences:
-            exp_html = ["<div class=\"h2\">Expériences</div>"]
-            for exp in cv.experiences:
-                bullets = "".join([f"<li>{bullet}</li>" for bullet in exp.bullets])
-                tags = "".join([f'<span class="badge">{tag}</span>' for tag in exp.tags]) if exp.tags else ""
-                exp_html.append(
-                    f"""
-                    <article>
-                        <div class=\"h3\">{exp.role} — {exp.org}</div>
-                        <div class=\"small muted\">{exp.dates}</div>
-                        <ul class=\"clean-list\">{bullets}</ul>
-                        <div>{tags}</div>
-                    </article>
-                    """
-                )
-            main_blocks.append("".join(exp_html))
-
-        if show_sections.get("Éducation", True) and cv.education:
-            edu_html = ["<div class=\"h2\">Éducation</div>"]
-            for edu in cv.education:
-                details = f"<p class=\"small muted\">{edu.details}</p>" if edu.details else ""
-                edu_html.append(
-                    f"""
-                    <article>
-                        <div class=\"h3\">{edu.title}</div>
-                        <div class=\"small muted\">{edu.school} — {edu.dates}</div>
-                        {details}
-                    </article>
-                    """
-                )
-            main_blocks.append("".join(edu_html))
-
-        side_blocks: List[str] = []
-        if show_sections.get("Compétences", True):
-            side_blocks.append(
-                f"""
-                <section>
-                    <div class=\"h2\">Compétences</div>
-                    <p><strong>Langues :</strong><br>{delist(cv.languages)}</p>
-                    <p><strong>Soft skills :</strong><br>{delist(cv.softskills)}</p>
-                    <p><strong>Outils :</strong><br>{delist(cv.tools)}</p>
-                </section>
-                """
-            )
-        if show_sections.get("Intérêts", False) and cv.interests:
-            side_blocks.append(
-                f"""
-                <section>
-                    <div class=\"h2\">Centres d’intérêt</div>
-                    <p>{delist(cv.interests)}</p>
-                </section>
-                """
-            )
-        if show_sections.get("Mots-clés", False) and cv.keywords:
-            side_blocks.append(
-                f"""
-                <section>
-                    <div class=\"h2\">Mots-clés</div>
-                    <div>{"".join([f'<span class="badge">{keyword}</span>' for keyword in cv.keywords])}</div>
-                </section>
-                """
-            )
-
-        preview_html = f"""
-        <div class=\"cv-card\">
-            <header>
-                <div class=\"h1\">{cv.name}</div>
-                <div class=\"muted\">{cv.headline}</div>
-                <div class=\"small muted\">{contact_line}</div>
-                <div class=\"rule\"></div>
-            </header>
-            <div class=\"grid-preview\">
-                <div>{"".join(main_blocks) if main_blocks else ""}</div>
-                <aside class=\"side-card\">{"".join(side_blocks) if side_blocks else ""}</aside>
-            </div>
-            <div class=\"footer\">Astuce : adapte l’accroche et les tags selon la cible. Les déclinaisons sont gérées dans la barre latérale.</div>
-        </div>
-        """
-
-        st.markdown(preview_html, unsafe_allow_html=True)
+        st.markdown(build_preview_html(cv, show_sections), unsafe_allow_html=True)
 
 
 def render_export(cv: CVData, show_sections: Dict[str, bool], signature: Optional[bytes], theme_color: str) -> None:
@@ -1000,12 +1090,26 @@ def render_export(cv: CVData, show_sections: Dict[str, bool], signature: Optiona
     st.subheader("📄 Export PDF & Signature")
     col1, col2 = st.columns([1, 1])
     with col1:
-        st.write("Vérifie le contenu dans l’aperçu, puis exporte ton PDF aux couleurs choisies. Le générateur garantit une seule page en cas de contenu dense.")
+        st.write(
+            "Vérifie le contenu dans l’aperçu, puis exporte ton PDF aux couleurs choisies. Le générateur garantit une seule page en cas de contenu dense."
+        )
+        st.caption(
+            "Nouveau : télécharge aussi la version HTML pour une retouche rapide ou une impression PDF via ton navigateur."
+        )
     with col2:
         if st.button("Générer le PDF"):
             pdf_bytes = cv_to_pdf_bytes(cv, show_sections, signature, theme_color)
             fname = f"CV_{cv.name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
             download_button_bytes(pdf_bytes, fname, "⬇️ Télécharger le PDF")
+        html_bytes = cv_to_html(cv, show_sections)
+        html_name = f"CV_{cv.name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.html"
+        st.download_button(
+            "⬇️ Télécharger en HTML (impression possible)",
+            data=html_bytes,
+            file_name=html_name,
+            mime="text/html",
+            help="Ouvre le fichier dans ton navigateur puis utilise la fonction Imprimer pour générer un PDF au format A4.",
+        )
 
 
 # ====== MAIN APP ======
