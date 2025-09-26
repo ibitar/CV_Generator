@@ -1,9 +1,8 @@
 streamlit
-reportlab
 escape
+uuid
 io
 pandas
-uuid
 numpy
 matplotlib
 plotly
