@@ -1,0 +1,10 @@
+streamlit
+reportlab
+escape
+io
+pandas
+uuid
+numpy
+matplotlib
+plotly
+fpdf
